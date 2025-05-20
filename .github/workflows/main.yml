@@ -1,0 +1,114 @@
+name: Turso CLI Build and Release
+
+on:
+  schedule:
+    # Ejecutar cada domingo
+    - cron: '0 5 * * 0'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión específica para compilar (sin el prefijo v)'
+        required: false
+        type: string
+
+jobs:
+  check-tags:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.check-tags.outputs.new_version }}
+      found_new_tag: ${{ steps.check-tags.outputs.found_new_tag }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Check for new tags
+        id: check-tags
+        run: |
+          # Crear archivo para almacenar la última versión procesada
+          LAST_VERSION_FILE=".last_version"
+          
+          # Si se proporciona una versión específica, usarla
+          if [ ! -z "${{ github.event.inputs.version }}" ]; then
+            echo "Se solicitó compilar la versión: ${{ github.event.inputs.version }}"
+            echo "new_version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "found_new_tag=true" >> $GITHUB_OUTPUT
+            echo "${{ github.event.inputs.version }}" > $LAST_VERSION_FILE
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git add $LAST_VERSION_FILE
+            git commit -m "Actualizar última versión a ${{ github.event.inputs.version }}"
+            git push
+            exit 0
+          fi
+          
+          # Si no existe el archivo, crear con versión vacía
+          if [ ! -f $LAST_VERSION_FILE ]; then
+            echo "" > $LAST_VERSION_FILE
+          fi
+          
+          LAST_VERSION=$(cat $LAST_VERSION_FILE)
+          
+          # Obtener los tags ordenados por fecha (más reciente primero)
+          TAGS=$(curl -s https://api.github.com/repos/tursodatabase/turso-cli/tags | jq -r '.[].name' | sort -Vr)
+          
+          # Obtener el tag más reciente (sin el prefijo v)
+          LATEST_TAG=$(echo "$TAGS" | head -n 1 | sed 's/^v//')
+          
+          echo "Última versión procesada: $LAST_VERSION"
+          echo "Versión más reciente disponible: $LATEST_TAG"
+          
+          # Comprobar si hay una nueva versión
+          if [ "$LATEST_TAG" != "$LAST_VERSION" ] && [ ! -z "$LATEST_TAG" ]; then
+            echo "¡Se encontró una nueva versión: $LATEST_TAG!"
+            echo "new_version=$LATEST_TAG" >> $GITHUB_OUTPUT
+            echo "found_new_tag=true" >> $GITHUB_OUTPUT
+            
+            # Actualizar el archivo de última versión
+            echo "$LATEST_TAG" > $LAST_VERSION_FILE
+            
+            # Guardar cambios en el repositorio
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git add $LAST_VERSION_FILE
+            git commit -m "Actualizar última versión a $LATEST_TAG"
+            git push
+          else
+            echo "No se encontraron nuevas versiones o la versión más reciente ya fue procesada."
+            echo "found_new_tag=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+  build-and-release:
+    needs: check-tags
+    if: needs.check-tags.outputs.found_new_tag == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Build Turso CLI
+        run: |
+          version="${{ needs.check-tags.outputs.new_version }}"
+          command="go install -ldflags='-s -w' github.com/tursodatabase/turso-cli/cmd/turso@v$version && cp /go/bin/windows_amd64/turso.exe ."
+          
+          docker run --rm -v ${PWD}:/usr/src/app -w /usr/src/app -e GOOS=windows -e GOARCH=amd64 golang:1.22-alpine sh -c "$command"
+        shell: bash
+      
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: "build-v${{ needs.check-tags.outputs.new_version }}"
+          name: "Turso CLI Build v${{ needs.check-tags.outputs.new_version }}"
+          body: |
+            Build automático del Turso CLI v${{ needs.check-tags.outputs.new_version }}
+            
+            Este es un build no oficial generado automáticamente basado en el tag v${{ needs.check-tags.outputs.new_version }} del repositorio oficial.
+          draft: false
+          prerelease: false
+          files: |
+            turso.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
