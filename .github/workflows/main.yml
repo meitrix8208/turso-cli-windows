@@ -93,7 +93,7 @@ jobs:
           version="${{ needs.check-tags.outputs.new_version }}"
           command="go install -ldflags='-s -w' github.com/tursodatabase/turso-cli/cmd/turso@v$version && cp /go/bin/windows_amd64/turso.exe ."
           
-          docker run --rm -v ${PWD}:/usr/src/app -w /usr/src/app -e GOOS=windows -e GOARCH=amd64 golang:1.22-alpine sh -c "$command"
+          docker run --rm -v ${PWD}:/usr/src/app -w /usr/src/app -e GOOS=windows -e GOARCH=amd64 golang:1.25-alpine sh -c "$command"
         shell: bash
       
       - name: Create Release
