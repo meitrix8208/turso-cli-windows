@@ -20,7 +20,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         
       - name: Check for new tags
         id: check-tags
@@ -89,7 +89,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       
       - name: Build Turso CLI
         run: |
@@ -108,7 +108,7 @@ jobs:
       
       - name: Create Release
         id: create_release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: "build-v${{ needs.check-tags.outputs.new_version }}"
           name: "Turso CLI Build v${{ needs.check-tags.outputs.new_version }}"
